@@ -1,7 +1,11 @@
 "use client";
 
+import Footer from "@/components/Footer";
 import GoogleMaps from "@/components/GoogleMaps";
 import Header from "@/components/Header";
+import WaypointDisplay from "@/components/WaypointDisplay";
+import { db } from "../lib/firebase"; // Ensure db is imported
+import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import {
   APIProvider,
   Map,
@@ -11,9 +15,25 @@ import {
   useMap,
 } from "@vis.gl/react-google-maps";
 import Image from "next/image";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+
+// The client gets the API key from the environment variable `GEMINI_API_KEY`.
 
 export default function Home() {
+  const docRef = doc(db, "miniWaypoint", `testplayer-central_hub`);
+
+  // What I need to do:
+  // I need to attach a listener to every button. On button press to start region
+  // Update the region value in the firestore database. At the same time pass regionChanged variable
+  // state which is used to update the UI (setting up a listener is 10x more tedious)
+  // This tracks all the regions.
+  // Next: I need to track all the waypoints within the regions and the status.
+  // I need to grab all the waypoint, for each waypoint grab the player-waypoint status, default as incomplete.
+  // Create a new record if the record does not already exist.
+
+  // I need to use the AI-generated data and add it into the miniWaypoint table.
+
   // Regions
   const regions = {
     central: [
@@ -131,7 +151,7 @@ export default function Home() {
       {
         key: "south",
         name: "South Region, SG",
-        location: { lat: 1.265, lng: 103.818},
+        location: { lat: 1.265, lng: 103.818 },
       },
       {
         key: "south_hub",
@@ -227,10 +247,29 @@ export default function Home() {
     { key: "barangaroo", location: { lat: -33.8605523, lng: 151.1972205 } },
   ];
 
+  useEffect(() => {
+    const syncData = async () => {
+      for (const waypoint of Object.values(regions)) {
+        for (const miniWaypoint of waypoint) {
+          await setDoc(doc(db, "miniWaypoint", miniWaypoint.key), {miniWaypoint});
+        }
+
+        // Use modular syntax for Client-side Firebase
+      }
+    };
+
+    syncData();
+  }, []);
+
   return (
-    <div className="h-screen bg-white">
+    <div className="min-h-screen h-full bg-white">
       <Header />
-      <h1 className="text-2xl m-4 text-black font-bold">
+      <h1
+        className="text-2xl m-4 text-black font-bold"
+        onClick={() => {
+          createWaypoints;
+        }}
+      >
         Get started with a waypoint
       </h1>
       <APIProvider apiKey={process.env.NEXT_PUBLIC_MAPS_API_KEY}>
@@ -245,11 +284,27 @@ export default function Home() {
           <RegionMarkers locations={regions} />
         </Map>
       </APIProvider>
+      <div className="p-4 text-black">
+        <h3 className="font-bold text-xl">Current Region: North Region, SG</h3>
+        <p>0/6 waypoints completed</p>
+
+        <h3 className="mt-4 font-bold text-xl">View remaining waypoints</h3>
+        <WaypointDisplay title="Ayer Rajah" distance={2} />
+        <WaypointDisplay title="West Coast" distance={3.2} />
+        <WaypointDisplay title="Ayer Rajah" distance={2} />
+        <WaypointDisplay title="West Coast" distance={3.2} />
+        <WaypointDisplay title="Ayer Rajah" distance={2} />
+        <WaypointDisplay title="West Coast" distance={3.2} />
+        <div className="mt-16"></div>
+      </div>
+
+      <Footer />
     </div>
   );
 }
 
 const RegionMarkers = ({ locations }) => {
+  let router = useRouter();
   const [regionSelected, setRegionSelected] = useState(null);
   const [marker, setMarker] = useState(null);
   const map = useMap();
@@ -313,9 +368,10 @@ const RegionMarkers = ({ locations }) => {
                       </div>
 
                       <p>6 waypoints available</p>
-                      <button className="mt-4 py-2 px-3 bg-cyan-300 rounded-md cursor-pointer"
+                      <button
+                        className="mt-4 py-2 px-3 bg-cyan-300 rounded-md cursor-pointer"
                         onClick={() => {
-                          setMarker(null)
+                          setMarker(null);
                           setRegionSelected(region[0].key);
                           map.setZoom(13.5);
                         }}
@@ -365,7 +421,14 @@ const RegionMarkers = ({ locations }) => {
                       </div>
 
                       <p>From {region[0].name}</p>
-                      <button>Begin quest</button>
+                      <button
+                        className="px-3 py-2 bg-blue-400 font-bold mt-2 rounded-lg"
+                        onClick={() => {
+                          router.push("/questview");
+                        }}
+                      >
+                        Begin quest
+                      </button>
                     </div>
                   </InfoWindow>
                 )}
