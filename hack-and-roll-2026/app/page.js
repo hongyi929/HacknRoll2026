@@ -5,7 +5,16 @@ import GoogleMaps from "@/components/GoogleMaps";
 import Header from "@/components/Header";
 import WaypointDisplay from "@/components/WaypointDisplay";
 import { db } from "../lib/firebase"; // Ensure db is imported
-import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import {
+  getDoc,
+  getDocs,
+  doc,
+  onSnapshot,
+  setDoc,
+  collection,
+  query,
+  where,
+} from "firebase/firestore";
 import {
   APIProvider,
   Map,
@@ -17,11 +26,35 @@ import {
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
+const deg2rad = (deg) => deg * (Math.PI / 180);
 
 // The client gets the API key from the environment variable `GEMINI_API_KEY`.
 
 export default function Home() {
   const docRef = doc(db, "miniWaypoint", `testplayer-central_hub`);
+  const [incompleteWaypoints, setIncompleteWaypoints] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [userPos, setUserPos] = useState(null);
+  const [regionDB, setRegionDB] = useState(null);
+
+  const calculateDistance = (userPos, locationPos) => {
+    const R = 6371; // Radius of the earth in km
+    const dLat = deg2rad(userPos.lat - locationPos.lat);
+    const dLon = deg2rad(userPos.lng - locationPos.lng);
+
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(deg2rad(locationPos.lat)) *
+        Math.cos(deg2rad(userPos.lat)) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distance = R * c; // Distance in km
+    return distance;
+  };
+
+  const [selectedRegion, setSelectedRegion] = useState(null);
 
   // What I need to do:
   // I need to attach a listener to every button. On button press to start region
@@ -34,224 +67,275 @@ export default function Home() {
 
   // I need to use the AI-generated data and add it into the miniWaypoint table.
 
+  const regionList = ["north", "south", "east", "west", "central"];
   // Regions
-  const regions = {
-    central: [
-      {
-        key: "central",
-        name: "Central Region, SG",
-        location: { lat: 1.3006, lng: 103.8448 },
-      },
-      {
-        key: "central_hub",
-        name: "Orchard Road",
-        location: { lat: 1.3048, lng: 103.8318 },
-      },
-      {
-        key: "fort_canning",
-        name: "Fort Canning Park",
-        location: { lat: 1.2953, lng: 103.8466 },
-      },
-      {
-        key: "somerset",
-        name: "Somerset Skatepark",
-        location: { lat: 1.3002, lng: 103.838 },
-      },
-      {
-        key: "emerald_hill",
-        name: "Emerald Hill",
-        location: { lat: 1.3039, lng: 103.8392 },
-      },
-      {
-        key: "newton",
-        name: "Newton Food Centre",
-        location: { lat: 1.3123, lng: 103.8379 },
-      },
-      {
-        key: "tanjong_pagar",
-        name: "Tanjong Pagar",
-        location: { lat: 1.2764, lng: 103.8439 },
-      },
-    ],
-    west: [
-      {
-        key: "west",
-        name: "West Region, SG",
-        location: { lat: 1.3328, lng: 103.7423 },
-      },
-      {
-        key: "west_hub",
-        name: "Jurong East",
-        location: { lat: 1.3329, lng: 103.7436 },
-      },
-      {
-        key: "chinese_garden",
-        name: "Chinese Garden",
-        location: { lat: 1.3387, lng: 103.73 },
-      },
-      {
-        key: "pandan_reservoir",
-        name: "Pandan Reservoir",
-        location: { lat: 1.3175, lng: 103.7485 },
-      },
-      {
-        key: "imm",
-        name: "IMM Mall",
-        location: { lat: 1.3345, lng: 103.7468 },
-      },
-      {
-        key: "science_centre",
-        name: "Science Centre",
-        location: { lat: 1.3325, lng: 103.7348 },
-      },
-      {
-        key: "west_coast",
-        name: "West Coast Park",
-        location: { lat: 1.2985, lng: 103.7634 },
-      },
-    ],
-    north: [
-      {
-        key: "north",
-        name: "North Region, SG",
-        location: { lat: 1.436, lng: 103.7858 },
-      },
-      {
-        key: "north_hub",
-        name: "Woodlands",
-        location: { lat: 1.4368, lng: 103.7865 },
-      },
-      {
-        key: "admiralty_park",
-        name: "Admiralty Park",
-        location: { lat: 1.4442, lng: 103.7834 },
-      },
-      {
-        key: "causeway_point",
-        name: "Causeway Point",
-        location: { lat: 1.4361, lng: 103.7859 },
-      },
-      {
-        key: "marsiling_park",
-        name: "Marsiling Park",
-        location: { lat: 1.4385, lng: 103.7745 },
-      },
-      {
-        key: "waterfront",
-        name: "Woodlands Waterfront",
-        location: { lat: 1.4533, lng: 103.7806 },
-      },
-      {
-        key: "sembawang_park",
-        name: "Sembawang Park",
-        location: { lat: 1.4632, lng: 103.8365 },
-      },
-    ],
-    south: [
-      {
-        key: "south",
-        name: "South Region, SG",
-        location: { lat: 1.265, lng: 103.818 },
-      },
-      {
-        key: "south_hub",
-        name: "HarbourFront",
-        location: { lat: 1.2653, lng: 103.821 },
-      },
-      {
-        key: "keppel_bay",
-        name: "Keppel Bay",
-        location: { lat: 1.2635, lng: 103.813 },
-      },
-      {
-        key: "mount_faber",
-        name: "Mount Faber Peak",
-        location: { lat: 1.273, lng: 103.8185 },
-      },
-      {
-        key: "telok_blangah",
-        name: "Telok Blangah Hill",
-        location: { lat: 1.2785, lng: 103.8106 },
-      },
-      {
-        key: "vivocity",
-        name: "VivoCity Promenade",
-        location: { lat: 1.2642, lng: 103.8225 },
-      },
-      {
-        key: "sentosa_siloso",
-        name: "Siloso Beach",
-        location: { lat: 1.2592, lng: 103.8115 },
-      },
-    ],
-    east: [
-      {
-        key: "east",
-        name: "East Region, SG",
-        location: {
-          lat: 1.3528,
-          lng: 103.9445,
-        },
-      },
-      {
-        key: "east_hub",
-        name: "Tampines",
-        location: { lat: 1.3525, lng: 103.9447 },
-      },
-      {
-        key: "sun_plaza",
-        name: "Sun Plaza Park",
-        location: { lat: 1.3592, lng: 103.9455 },
-      },
-      {
-        key: "eco_green",
-        name: "Tampines Eco Green",
-        location: { lat: 1.3597, lng: 103.9388 },
-      },
-      {
-        key: "bedok_res",
-        name: "Bedok Reservoir",
-        location: { lat: 1.3415, lng: 103.9325 },
-      },
-      {
-        key: "simei",
-        name: "Simei Park",
-        location: { lat: 1.3435, lng: 103.953 },
-      },
-      {
-        key: "pasir_ris",
-        name: "Pasir Ris Park",
-        location: { lat: 1.3756, lng: 103.9542 },
-      },
-    ],
+
+  const fetchAllRegions = async () => {
+    const querySnapshot = await getDocs(collection(db, "region"));
+
+    const regionsData = querySnapshot.docs.map((doc) => ({
+      id: doc.id, // The document ID (e.g., 'north')
+      ...doc.data(), // The fields (name, location, etc.)
+    }));
+
+    console.log(regionsData);
+    setRegionDB(regionsData);
   };
 
-  const locations = [
-    { key: "operaHouse", location: { lat: -33.8567844, lng: 151.213108 } },
-    { key: "tarongaZoo", location: { lat: -33.8472767, lng: 151.2188164 } },
-    { key: "manlyBeach", location: { lat: -33.8209738, lng: 151.2563253 } },
-    { key: "hyderPark", location: { lat: -33.8690081, lng: 151.2052393 } },
-    { key: "theRocks", location: { lat: -33.8587568, lng: 151.2058246 } },
-    { key: "circularQuay", location: { lat: -33.858761, lng: 151.2055688 } },
-    { key: "harbourBridge", location: { lat: -33.852228, lng: 151.2038374 } },
-    { key: "kingsCross", location: { lat: -33.8737375, lng: 151.222569 } },
-    { key: "botanicGardens", location: { lat: -33.864167, lng: 151.216387 } },
-    { key: "museumOfSydney", location: { lat: -33.8636005, lng: 151.2092542 } },
-    { key: "maritimeMuseum", location: { lat: -33.869395, lng: 151.198648 } },
+  const regions = {
+  central: [
     {
-      key: "kingStreetWharf",
-      location: { lat: -33.8665445, lng: 151.1989808 },
+      key: "central",
+      name: "Central Region, SG",
+      location: { lat: 1.3006, lng: 103.8448 },
+      completed: false,
     },
-    { key: "aquarium", location: { lat: -33.869627, lng: 151.202146 } },
-    { key: "darlingHarbour", location: { lat: -33.87488, lng: 151.1987113 } },
-    { key: "barangaroo", location: { lat: -33.8605523, lng: 151.1972205 } },
-  ];
+    {
+      key: "central_hub",
+      name: "Orchard Road",
+      location: { lat: 1.3048, lng: 103.8318 },
+      completed: false,
+    },
+    {
+      key: "fort_canning",
+      name: "Fort Canning Park",
+      location: { lat: 1.2953, lng: 103.8466 },
+      completed: false,
+    },
+    {
+      key: "somerset",
+      name: "Somerset Skatepark",
+      location: { lat: 1.3002, lng: 103.838 },
+      completed: false,
+    },
+    {
+      key: "emerald_hill",
+      name: "Emerald Hill",
+      location: { lat: 1.3039, lng: 103.8392 },
+      completed: false,
+    },
+    {
+      key: "newton",
+      name: "Newton Food Centre",
+      location: { lat: 1.3123, lng: 103.8379 },
+      completed: false,
+    },
+    {
+      key: "tanjong_pagar",
+      name: "Tanjong Pagar",
+      location: { lat: 1.2764, lng: 103.8439 },
+      completed: false,
+    },
+  ],
+  west: [
+    {
+      key: "west",
+      name: "West Region, SG",
+      location: { lat: 1.3328, lng: 103.7423 },
+      completed: false,
+    },
+    {
+      key: "nus_kent_ridge",
+      name: "National University of Singapore",
+      location: { lat: 1.2966, lng: 103.7764 },
+      completed: false,
+    },
+    {
+      key: "west_hub",
+      name: "Jurong East",
+      location: { lat: 1.3329, lng: 103.7436 },
+      completed: false,
+    },
+    {
+      key: "chinese_garden",
+      name: "Chinese Garden",
+      location: { lat: 1.3387, lng: 103.73 },
+      completed: false,
+    },
+    {
+      key: "pandan_reservoir",
+      name: "Pandan Reservoir",
+      location: { lat: 1.3175, lng: 103.7485 },
+      completed: false,
+    },
+    {
+      key: "imm",
+      name: "IMM Mall",
+      location: { lat: 1.3345, lng: 103.7468 },
+      completed: false,
+    },
+    {
+      key: "science_centre",
+      name: "Science Centre",
+      location: { lat: 1.3325, lng: 103.7348 },
+      completed: false,
+    },
+    {
+      key: "west_coast",
+      name: "West Coast Park",
+      location: { lat: 1.2985, lng: 103.7634 },
+      completed: false,
+    },
+  ],
+  north: [
+    {
+      key: "north",
+      name: "North Region, SG",
+      location: { lat: 1.436, lng: 103.7858 },
+      completed: false,
+    },
+    {
+      key: "north_hub",
+      name: "Woodlands",
+      location: { lat: 1.4368, lng: 103.7865 },
+      completed: false,
+    },
+    {
+      key: "admiralty_park",
+      name: "Admiralty Park",
+      location: { lat: 1.4442, lng: 103.7834 },
+      completed: false,
+    },
+    {
+      key: "causeway_point",
+      name: "Causeway Point",
+      location: { lat: 1.4361, lng: 103.7859 },
+      completed: false,
+    },
+    {
+      key: "marsiling_park",
+      name: "Marsiling Park",
+      location: { lat: 1.4385, lng: 103.7745 },
+      completed: false,
+    },
+    {
+      key: "waterfront",
+      name: "Woodlands Waterfront",
+      location: { lat: 1.4533, lng: 103.7806 },
+      completed: false,
+    },
+    {
+      key: "sembawang_park",
+      name: "Sembawang Park",
+      location: { lat: 1.4632, lng: 103.8365 },
+      completed: false,
+    },
+  ],
+  south: [
+    {
+      key: "south",
+      name: "South Region, SG",
+      location: { lat: 1.265, lng: 103.818 },
+      completed: false,
+    },
+    {
+      key: "south_hub",
+      name: "HarbourFront",
+      location: { lat: 1.2653, lng: 103.821 },
+      completed: false,
+    },
+    {
+      key: "keppel_bay",
+      name: "Keppel Bay",
+      location: { lat: 1.2635, lng: 103.813 },
+      completed: false,
+    },
+    {
+      key: "mount_faber",
+      name: "Mount Faber Peak",
+      location: { lat: 1.273, lng: 103.8185 },
+      completed: false,
+    },
+    {
+      key: "telok_blangah",
+      name: "Telok Blangah Hill",
+      location: { lat: 1.2785, lng: 103.8106 },
+      completed: false,
+    },
+    {
+      key: "vivocity",
+      name: "VivoCity Promenade",
+      location: { lat: 1.2642, lng: 103.8225 },
+      completed: false,
+    },
+    {
+      key: "sentosa_siloso",
+      name: "Siloso Beach",
+      location: { lat: 1.2592, lng: 103.8115 },
+      completed: false,
+    },
+  ],
+  east: [
+    {
+      key: "east",
+      name: "East Region, SG",
+      location: {
+        lat: 1.3528,
+        lng: 103.9445,
+      },
+      completed: false,
+    },
+    {
+      key: "east_hub",
+      name: "Tampines",
+      location: { lat: 1.3525, lng: 103.9447 },
+      completed: false,
+    },
+    {
+      key: "sun_plaza",
+      name: "Sun Plaza Park",
+      location: { lat: 1.3592, lng: 103.9455 },
+      completed: false,
+    },
+    {
+      key: "eco_green",
+      name: "Tampines Eco Green",
+      location: { lat: 1.3597, lng: 103.9388 },
+      completed: false,
+    },
+    {
+      key: "bedok_res",
+      name: "Bedok Reservoir",
+      location: { lat: 1.3415, lng: 103.9325 },
+      completed: false,
+    },
+    {
+      key: "simei",
+      name: "Simei Park",
+      location: { lat: 1.3435, lng: 103.953 },
+      completed: false,
+    },
+    {
+      key: "pasir_ris",
+      name: "Pasir Ris Park",
+      location: { lat: 1.3756, lng: 103.9542 },
+      completed: false,
+    },
+  ],
+};
 
   useEffect(() => {
     const syncData = async () => {
-      for (const waypoint of Object.values(regions)) {
-        for (const miniWaypoint of waypoint) {
-          await setDoc(doc(db, "miniWaypoint", miniWaypoint.key), {miniWaypoint});
+      for (const [regionKey, waypointArray] of Object.entries(regions)) {
+        for (const miniWaypoint of waypointArray) {
+          if (regionList.includes(miniWaypoint.key)) {
+            null;
+          } else {
+            const docRef = doc(db, "miniWaypoint", miniWaypoint.key);
+
+            await setDoc(
+              docRef,
+              {
+                key: miniWaypoint.key,
+                name: miniWaypoint.name,
+                location: miniWaypoint.location,
+                region: regionKey, // This adds the "west", "east", etc. attribute
+                lastUpdated: new Date(), // Good practice to track when you synced
+                completed: false,
+              },
+              { merge: true },
+            );
+          }
         }
 
         // Use modular syntax for Client-side Firebase
@@ -259,17 +343,44 @@ export default function Home() {
     };
 
     syncData();
+
+    fetchAllRegions()
+
+  }, []);
+
+  // ADAM added - fetches incomplete waypoints
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition((position) => {
+        const pos = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        };
+        setUserPos(pos);
+      });
+    }
+
+    const q = query(
+      collection(db, "miniWaypoint"),
+      where("completed", "==", false),
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setIncompleteWaypoints(data);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
   return (
     <div className="min-h-screen h-full bg-white">
       <Header />
-      <h1
-        className="text-2xl m-4 text-black font-bold"
-        onClick={() => {
-          createWaypoints;
-        }}
-      >
+      <h1 className="text-2xl m-4 text-black font-bold">
         Get started with a waypoint
       </h1>
       <APIProvider apiKey={process.env.NEXT_PUBLIC_MAPS_API_KEY}>
@@ -281,29 +392,75 @@ export default function Home() {
           disableDefaultUI
           mapId={"6f4a75fc1d628b7c8c817bc6"}
         >
-          <RegionMarkers locations={regions} />
+          <RegionMarkers
+            locations={regions}
+            onRegionSelect={setSelectedRegion}
+          />
         </Map>
       </APIProvider>
       <div className="p-4 text-black">
-        <h3 className="font-bold text-xl">Current Region: North Region, SG</h3>
-        <p>0/6 waypoints completed</p>
+        <h3 className="font-bold text-xl">
+          Current Region: {selectedRegion ? selectedRegion : "None Selected"}
+        </h3>
 
-        <h3 className="mt-4 font-bold text-xl">View remaining waypoints</h3>
-        <WaypointDisplay title="Ayer Rajah" distance={2} />
-        <WaypointDisplay title="West Coast" distance={3.2} />
-        <WaypointDisplay title="Ayer Rajah" distance={2} />
-        <WaypointDisplay title="West Coast" distance={3.2} />
-        <WaypointDisplay title="Ayer Rajah" distance={2} />
-        <WaypointDisplay title="West Coast" distance={3.2} />
-        <div className="mt-16"></div>
+        {(() => {
+          const filteredWaypoints = selectedRegion
+            ? incompleteWaypoints.filter(
+                (wp) =>
+                  wp.region === selectedRegion.split(",")[0].toLowerCase(),
+              )
+            : incompleteWaypoints;
+
+          const regionCounts = {
+            north: 7,
+            south: 7,
+            east: 7,
+            west: 8,
+            central: 7,
+          };
+
+          const totalInRegion = selectedRegion
+            ? regionCounts[selectedRegion.split(",")[0].toLowerCase()] || 0
+            : 31;
+
+          return (
+            <>
+              <p className="font-semibold">
+                {filteredWaypoints.length}/{totalInRegion} waypoints remaining
+              </p>
+
+              <h3 className="mt-4 font-bold text-xl">
+                View remaining waypoints
+              </h3>
+              {loading ? (
+                <p>Loading waypoints...</p>
+              ) : filteredWaypoints.length > 0 ? (
+                filteredWaypoints.map((waypoint) => (
+                  <WaypointDisplay
+                    key={waypoint.id}
+                    title={waypoint.name}
+                    distance={
+                      userPos
+                        ? calculateDistance(userPos, waypoint.location).toFixed(
+                            2,
+                          )
+                        : "N/A"
+                    }
+                    waypoint={waypoint}
+                  />
+                ))
+              ) : (
+                <p>All waypoints completed!</p>
+              )}
+            </>
+          );
+        })()}
       </div>
-
-      <Footer />
     </div>
   );
 }
 
-const RegionMarkers = ({ locations }) => {
+const RegionMarkers = ({ locations, onRegionSelect }) => {
   let router = useRouter();
   const [regionSelected, setRegionSelected] = useState(null);
   const [marker, setMarker] = useState(null);
@@ -325,19 +482,28 @@ const RegionMarkers = ({ locations }) => {
     }, 300);
   }
 
+  const regionCounts = {
+    north: 6,
+    south: 6,
+    east: 6,
+    west: 7,
+    central: 6,
+  };
+
   return (
     <>
       {Object.entries(locations).map(([regionValue, region]) => {
-        return region.map((miniWaypoint) => {
-          if (regions.includes(miniWaypoint.key)) {
+        return region.map((miniWaypoint, index) => {
+          if (regions.includes(miniWaypoint.key)) {            
             return (
-              <div>
+              <div key={`region-${miniWaypoint.key}`}>
                 <AdvancedMarker
-                  key={miniWaypoint.name}
                   position={miniWaypoint.location}
                   onClick={() => {
                     handleRegionClick(miniWaypoint);
+                    setRegionSelected(regionValue);
                     setMarker(miniWaypoint);
+                    onRegionSelect(regionValue);
                   }}
                 >
                   <Pin
@@ -367,12 +533,14 @@ const RegionMarkers = ({ locations }) => {
                         />
                       </div>
 
-                      <p>6 waypoints available</p>
+                      <p>
+                        {`${regionCounts[regionValue]} waypoints available`}{" "}
+                      </p>
                       <button
                         className="mt-4 py-2 px-3 bg-cyan-300 rounded-md cursor-pointer"
                         onClick={() => {
                           setMarker(null);
-                          setRegionSelected(region[0].key);
+                          setRegionSelected(regionValue);
                           map.setZoom(13.5);
                         }}
                       >
@@ -385,9 +553,8 @@ const RegionMarkers = ({ locations }) => {
             );
           } else if (regionSelected == regionValue) {
             return (
-              <div>
+              <div key={`waypoint-${miniWaypoint.key}`}>
                 <AdvancedMarker
-                  key={miniWaypoint.name}
                   position={miniWaypoint.location}
                   onClick={() => {
                     handleMiniClick(miniWaypoint);
@@ -424,7 +591,13 @@ const RegionMarkers = ({ locations }) => {
                       <button
                         className="px-3 py-2 bg-blue-400 font-bold mt-2 rounded-lg"
                         onClick={() => {
-                          router.push("/questview");
+                          const params = new URLSearchParams({
+                            name: miniWaypoint.name,
+                            lat: miniWaypoint.location.lat,
+                            lng: miniWaypoint.location.lng,
+                            key: miniWaypoint.key,
+                          });
+                          router.push(`/questview?${params.toString()}`);
                         }}
                       >
                         Begin quest

@@ -3,11 +3,12 @@ import { storage, db } from "../lib/firebase"; // Your firebase config file
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { doc, updateDoc, getDoc, setDoc } from "firebase/firestore";
 
-const Dropdown = ({ taskName, userId="testplayer", questId = "central_hub", questNo, handleAIEval }) => {
+const Dropdown = ({ taskName, userId="testplayer", questId, questNo, handleAIEval }) => {
   const [dropTrue, setDropTrue] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [imageUrl, setImageUrl] = useState(null);
   const [score, setScore] = useState(null);
+  const [comments, setComments] = useState(null)
   const [status, setStatus] = useState(null)
   const fileInputRef = useRef(null);
 
@@ -23,8 +24,9 @@ const Dropdown = ({ taskName, userId="testplayer", questId = "central_hub", ques
       const url = await getDownloadURL(storageRef);
       setImageUrl(url);
 
-      const evalScore = await handleAIEval(questId, file)
+      const evalScore = await handleAIEval(taskName, file, questNo)
       setScore(evalScore.split(",")[0])
+      setComments(evalScore.split(",")[1])
 
       // 3. Update Firestore & Check Status
       await updateQuestData(url, evalScore);
@@ -61,7 +63,7 @@ const Dropdown = ({ taskName, userId="testplayer", questId = "central_hub", ques
       let newStatus = "active";
       // If all three have scores
       if (evaluations.every(val => typeof val === 'number')) {
-        newStatus = evaluations.every(val => val >= 0) ? "completed" : "active";
+        newStatus = evaluations.every(val => val >= 80) ? "completed" : "active";
       }
       
       await updateDoc(playerRef, { status: newStatus });
@@ -71,7 +73,7 @@ const Dropdown = ({ taskName, userId="testplayer", questId = "central_hub", ques
   return (
     <div className="w-full">
       <div onClick={() => setDropTrue(!dropTrue)} className="cursor-pointer">
-        <h2 className={`flex bg-[#48B3AF] ml-2 mr-2 mt-4 pl-4 pt-4 pb-8 text-[20px] text-black transition-all duration-200 ${dropTrue ? "rounded-t-lg" : "rounded-lg"}`}>
+        <h2 className={`flex bg-[#5bc684] ml-2 mr-2 mt-4 pl-4 pt-4 pb-8 text-[20px] text-black transition-all duration-200 ${dropTrue ? "rounded-t-lg" : "rounded-lg"}`}>
           <img src="images/arrow-down.png" className={`w-4 h-4 ml-2 mt-2 mr-3 transition-transform duration-200 ${dropTrue ? "rotate-180" : ""}`} />
           {taskName}
           {score !== null && <span className="ml-auto mr-4 font-bold text-white bg-black/20 px-2 rounded">Score: {score}</span>}
@@ -79,7 +81,7 @@ const Dropdown = ({ taskName, userId="testplayer", questId = "central_hub", ques
       </div>
 
       {dropTrue && (
-        <div className="bg-[#48B3AF] rounded-b-lg ml-2 mr-2 pl-4 pb-8 -mt-[1px] border-t border-blue-200/30">
+        <div className="bg-[#5bc684] rounded-b-lg ml-2 mr-2 pl-4 pb-8 -mt-[1px] border-t border-blue-200/30">
           <input type="file" ref={fileInputRef} onChange={handleUpload} className="hidden" accept="image/*" />
           
           <button 
@@ -96,7 +98,9 @@ const Dropdown = ({ taskName, userId="testplayer", questId = "central_hub", ques
             ) : (
               <span className="text-gray-500 text-sm">No image uploaded</span>
             )}
+            
           </div>
+          {comments !== null && <p>{comments}</p>}
         </div>
       )}
     </div>

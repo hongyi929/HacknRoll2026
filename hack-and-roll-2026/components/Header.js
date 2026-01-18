@@ -6,7 +6,7 @@ export default function Header() {
         <h1 className="text-[#476EAE] text-2xl font-bold">LENNO</h1>
       </div>
       <div>
-        <img src="images/user.png" className="max-h-[40px]"></img>
+        <img src="images/history.png" className="max-h-[40px]"></img>
       </div>
     </div>
   );
