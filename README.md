@@ -1,3 +1,7 @@
+# Project Details
+Lenno is a webapp that generates waypoints near you, where you can embark on quests to learn more about the places near you and connect with nature.
+
+# Setup
 Frontend:
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
 
